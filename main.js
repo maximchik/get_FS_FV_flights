@@ -23,39 +23,36 @@ new Vue({
     },
     mounted: function () {
         axios.get(urlFlightStats + airportIata)
-            .then((response) => {
+            .then(response => {
                 this.htmldata = getLinksFromFlightStats(response.data)
                 this.flightsToCheck = this.htmldata.length
                 this.totallCount = this.flightsToCheck
-                this.htmldata.forEach(element => {
-                    axios.get(element.href)
-                        .then(function (response) {
-                            let result = countDataFromFlightStats(response.data)
-                            element.terminal = result.term
-                            element.gate = result.gate
-                            if (result.term) {
-                                this.termCount++
-                            }
-                            if (result.gate) {
-                                this.gateCount++
-                            }
-                        })
-                        .catch(function (error) {
-                            console.log(error)
-                        })
-                        .then(() => {
-                            if (--this.flightsToCheck <= 0) {
-                                console.log('end')
-                            }
-                        });
-                });
+                let dataArray = this.htmldata.map(element => 
+                                    axios.get(element.href,{params:{el: element}})
+                                        .then(response => {
+                                            let result = countDataFromFlightStats(response.data)
+                                            element.terminal = result.term
+                                            element.gate = result.gate
+                                            result.term && this.termCount++
+                                            result.gate && this.gateCount++
+                                        })
+                                        .catch(error => {
+                                            console.log(error)
+                                        })
+                                        .then(() => {
+                                            this.flightsToCheck--
+                                        })
+                                )
+                axios.all(dataArray)
+                    .then(results => {
+                        console.log("End res length: "+results.length)
+                    })
             })
-            .catch((error) => {
-                console.log(error);
+            .catch(error => {
+                console.log(error)
             });
     }
 })
-
 
 var getLinksFromFlightStats = function (htmlSource) {
     return $('<span>' + htmlSource + '</span>')

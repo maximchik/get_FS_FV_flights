@@ -1,10 +1,10 @@
 {
 	"manifest_version": 2,
-	"name": "Get flights stat from FS",
-	"description": "Получение статистики с сайта flightsstats",
+	"name": "Get flights list",
+	"description": "Get flights list from FS and FV",
 	"version": "1.0.0",
     "background": {"page": "init.html"},
-    "permissions": ["tabs","contextMenus","https://www.flightstats.com/*"],
+    "permissions": ["tabs","contextMenus","https://www.flightstats.com/*","https://tracker.flightview.com/*"],
     "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
     "web_accessible_resources": ["main.js","assets/axios.js","assets/jquery-3.3.1.min.js","assets/vue.js"]
 }

@@ -1,11 +1,15 @@
+const CancelToken = axios.CancelToken
+const source = CancelToken.source()
 const urlParams = new URLSearchParams(window.location.search)
 const airportIata = urlParams.get('iata')
+const localTimeUrl = "https://www.flightstats.com/v2/api/airport/"+airportIata+"?rqid="+Math.random()
 
 var flightsCount = 0;
 
 new Vue({
     el: '#app',
     data: {
+        localTime: null,
         flightsSourceId: 0,
         flightsSources: [
             {
@@ -33,12 +37,29 @@ new Vue({
 //                        .filter((i,el) => $(el).text().indexOf("^") === -1)
                         .get()
                         .forEach(el => {
+//https://www.flightstats.com/v2/flight-tracker/TK/161?year=2018&month=12&date=17&flightId=983637517&utm_source=34b64945a69b9cac:4e54f19d:141251738d3:-17a3&utm_medium=cpc&utm_campaign=weblet                            
+//https://www.flightstats.com/v2/api-next/flight-tracker/LX/4049/2018/12/17/983615798?rqid=bda2vcbp7aj
                             let flightNum = $('td:nth-child(1)',el).text().trim()
+                            let flightLnk = $('td:nth-child(1) a',el).attr('href')
+                            let flightId = flightLnk.match(/flightId=(\d+)/i)[1]
+                            let flightNm = flightLnk.match(/tracker\/(.+?)\?/i)[1]
+                            let flightYear = flightLnk.match(/year=(\d+)/i)[1]
+                            let flightMonth = flightLnk.match(/month=(\d+)/i)[1]
+                            let flightDay = flightLnk.match(/date=(\d+)/i)[1]
+
                             if (!this.htmldata.find(el =>el.flight == flightNum)) {
                                 this.htmldata.push({
-                                            href: $('td:nth-child(1) a',el).attr('href'),
+                                            href: "https://www.flightstats.com/v2/api-next/flight-tracker/"
+                                                    +flightNm+"/"
+                                                    +flightYear+"/"
+                                                    +flightMonth+"/"
+                                                    +flightDay+"/"
+                                                    +flightId +"/"
+                                                    +"?rqid="+Math.random(),
+                                            linkToFlight: flightLnk,
                                             flight: flightNum,
                                             time: to24h($('td:nth-child(4) a',el).text().trim()),
+                                            timeActual: '?',
                                             gate: '?',
                                             terminal: '?',
 
@@ -48,13 +69,18 @@ new Vue({
                 },
                 getFlightsPages: function () {
                     let dataArray = this.htmldata.map(element => 
-                        axios.get(element.href)
+                        axios.get(element.href,{cancelToken: source.token})
                             .then(response => {
-                                let hh = $('<span>' + response.data + '</span>').find('[class^="ticket__TerminalGateBagContainer"]')
-                                let term = hh.find('[class^="ticket__TGBSection"]:eq(0) > div:eq(1)').eq(0).text()
-                                let gate = hh.find('[class^="ticket__TGBSection"]:eq(1) > div:eq(1)').eq(0).text()
-                                element.gate = gate=='N/A'?null:gate
-                                element.terminal = term=='N/A'?null:term
+                                let statusTmp = ''
+                                let flightData = response.data.data
+                                let timeTmp = flightData.departureAirport.times.scheduled.time24
+                                let timeActualTmp = flightData.departureAirport.times.estimatedActual.time24
+                                if (isDelayed(timeTmp,timeActualTmp)) statusTmp = 'delayed'
+                                if (flightData.flightNote.canceled) statusTmp = 'cancelled'
+                                element.gate = flightData.departureAirport.gate
+                                element.terminal = flightData.departureAirport.terminal
+                                element.timeActual = timeActualTmp
+                                element.status = statusTmp
                                 element.gate && this.gateCount++
                                 element.terminal && this.termCount++
                                 this.flightsChecked++
@@ -98,11 +124,19 @@ new Vue({
                             }
                             termGate[0] && this.termCount++
                             termGate[1] && this.gateCount++
+                            let statusTmp = ''
+                            let timeTmp = to24h($('td:nth-child(5)',el).text())
+                            let timeActualTmp = to24h($('td:nth-child(6)',el).text())
+                            if (isDelayed(timeTmp,timeActualTmp)) statusTmp = 'delayed'
+                            if ($('.c4',el).text().match(/cancel/i)) statusTmp = 'cancelled'
                             this.flightsChecked++
                             this.htmldata.push({
                                         href: '',
+                                        linkToFlight: 'https://tracker.flightview.com'+$('[id^="ffFormShowIndividual"]',el).eq(0).attr('action'),
                                         flight: $('.c1',el).text().match(/"(.+)"/i )[1]+" "+$('.c2',el).text().trim(),
-                                        time: to24h($('td:nth-child(5)',el).text()),
+                                        time: timeTmp,
+                                        timeActual: timeActualTmp,
+                                        status: statusTmp,
                                         gate: termGate[1],
                                         terminal: termGate[0]
                                         })
@@ -131,26 +165,56 @@ new Vue({
             this.flightsSources[flightsSourceId].sortField = fieldName
             this.flightsSources[flightsSourceId].htmldata = sortData(this.flightsSources[flightsSourceId].htmldata,fieldName)
         },
+        stopLoading: function(flightsSourceId) {
+            this.flightsSources[flightsSourceId].flightsLoading = false
+            source.cancel()
+        },
+        flightNumberHtml: function(flight) {
+            let htmlStr = flight.flight;
+            if (flight.status === 'cancelled') {
+                htmlStr = '<del><strong>'+htmlStr+'</strong></del>'
+            }
+            if (flight.linkToFlight) {
+                htmlStr = '<a href="'+flight.linkToFlight+'">'+htmlStr+'</a>'
+            }
+            return htmlStr
+        },
         calc: calculateAll
     },
+    created: getLocalTime,
     mounted: calculateAll,
 })
 
+function getLocalTime () {
+    console.log(localTimeUrl)
+    axios.get(localTimeUrl)
+        .then(response => {
+            console.log(response.data)
+            this.localTime = response.data.detailsHeader.currentTime
+        })
+}
+
 function calculateAll () {
     let currentFlightsSource = this.flightsSources[this.flightsSourceId]
-    currentFlightsSource.flightsLoading = true
     if (currentFlightsSource.url) {
-        currentFlightsSource.flightsChecked = currentFlightsSource.url.length
-        currentFlightsSource.flightsTotal = currentFlightsSource.url.length*20
+        currentFlightsSource.flightsChecked = 0
+        currentFlightsSource.flightsTotal = 0 // currentFlightsSource.url.length
         let prepFlightsList = currentFlightsSource.url.map(el => axios.get(el)
                                                 .then(response => {
                                                     currentFlightsSource.getFlights(response.data)
                                                 }))
         axios.all(prepFlightsList)
             .then(() => {
+                currentFlightsSource.flightsLoading = true
                 currentFlightsSource.flightsTotal = currentFlightsSource.htmldata.length
                 sortData(currentFlightsSource.htmldata,currentFlightsSource.sortField)
                 currentFlightsSource.getFlightsPages()
+            }).catch(function (thrown) {
+                if (axios.isCancel(thrown)) {
+                    console.log('Request canceled', thrown.message);
+                } else {
+                    console.log('Request error', thrown.message);
+                }
             })
     }
 }
@@ -180,4 +244,8 @@ function to24h (time) {
         return (100+hours).toString().substr(1)+":"+minutes;
     }
     return '';
+}
+
+function isDelayed(t1,t2) {
+    return t2>t1
 }

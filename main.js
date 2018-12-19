@@ -112,6 +112,8 @@ new Vue({
                 flightsChecked: 0,
                 url: ['https://tracker.flightview.com/FVAccess2/tools/fids/fidsDefault.asp?accCustId=FVWebFids&fidsId=20001&fidsInit=departures&fidsFilterAl=&fidsFilterArrap=&fidsApt='+airportIata],
                 getFlights: function (htmlSource) {
+                    let lastTime = "00:00"
+                    let nextDay = ""
                     $('<span>' + htmlSource + '</span>')
                         .find('#fvData > table > tbody > tr')
                         .get()
@@ -130,11 +132,16 @@ new Vue({
                             if (isDelayed(timeTmp,timeActualTmp)) statusTmp = 'delayed'
                             if ($('.c4',el).text().match(/cancel/i)) statusTmp = 'cancelled'
                             this.flightsChecked++
+                            if (timeTmp < lastTime) {
+                                nextDay = ">"
+                            }
+                            lastTime = timeTmp
+
                             this.htmldata.push({
                                         href: '',
                                         linkToFlight: 'https://tracker.flightview.com'+$('[id^="ffFormShowIndividual"]',el).eq(0).attr('action'),
                                         flight: $('.c1',el).text().match(/"(.+)"/i )[1]+" "+$('.c2',el).text().trim(),
-                                        time: timeTmp,
+                                        time: nextDay + timeTmp,
                                         timeActual: timeActualTmp,
                                         status: statusTmp,
                                         gate: termGate[1],
